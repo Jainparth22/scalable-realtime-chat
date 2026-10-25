@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat App — Distributed Systems</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#060d0f; --surface:#0d1a1c; --border:#1a2f32; --accent:#10b981;
+          --accent2:#34d399; --text:#e2e8f0; --muted:#64748b; --error:#ef4444; --warn:#f59e0b; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+  header { background:linear-gradient(135deg,#021a12 0%,#052a1e 100%);
+    border-bottom:1px solid var(--border); padding:20px 32px; }
+  .badge { background:var(--accent); color:#000; font-size:11px; font-weight:700;
+    padding:3px 10px; border-radius:20px; letter-spacing:1px; display:inline-block; margin-bottom:6px; }
+  header h1 { font-size:22px; font-weight:700; }
+  header p { font-size:13px; color:var(--muted); }
+
+  .container { max-width:1100px; margin:0 auto; padding:28px 24px; }
+  .layout { display:grid; grid-template-columns:220px 1fr 280px; gap:16px; height:calc(100vh - 130px); }
+
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .panel-header { padding:14px 16px; border-bottom:1px solid var(--border); font-size:13px; font-weight:600; color:var(--accent2); }
+
+  /* Room list */
+  .room-list { flex:1; overflow-y:auto; }
+  .room-item { padding:12px 16px; cursor:pointer; border-bottom:1px solid var(--border); transition:.2s; }
+  .room-item:hover { background:#0d2018; }
+  .room-item.active { background:#0d2018; border-left:3px solid var(--accent); }
+  .room-name { font-size:13px; font-weight:500; }
+  .room-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+  .online-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); display:inline-block;
+    box-shadow:0 0 6px var(--accent); margin-right:4px; }
+
+  /* Chat window */
+  .chat-panel { display:flex; flex-direction:column; }
+  .chat-header { padding:12px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:70%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.5; animation:slideIn .2s ease; }
+  .msg-own { align-self:flex-end; background:var(--accent); color:#000; border-bottom-right-radius:4px; }
+  .msg-other { align-self:flex-start; background:#0d2018; border:1px solid var(--border); border-bottom-left-radius:4px; }
+  .msg-meta { font-size:10px; margin-top:4px; opacity:.7; }
+  .msg-ack { font-size:10px; color:var(--accent2); }
+  .sys-msg { align-self:center; font-size:11px; color:var(--muted); padding:4px 12px;
+    background:#0d1a1c; border:1px solid var(--border); border-radius:20px; }
+  .input-area { padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; }
+  .chat-input { flex:1; padding:10px 14px; background:var(--bg); border:1px solid var(--border);
+    border-radius:8px; color:var(--text); font-family:inherit; font-size:13px; outline:none; }
+  .chat-input:focus { border-color:var(--accent); }
+  .send-btn { padding:10px 18px; background:var(--accent); color:#000; border:none;
+    border-radius:8px; cursor:pointer; font-weight:600; font-family:inherit; transition:.2s; }
+  .send-btn:hover { background:var(--accent2); }
+
+  /* Info panel */
+  .info-section { padding:14px 16px; border-bottom:1px solid var(--border); }
+  .info-section h3 { font-size:12px; font-weight:600; color:var(--accent2); margin-bottom:8px; }
+  .presence-user { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:12px; }
+  .offline-badge { font-size:10px; padding:1px 6px; border-radius:4px; background:#7f1d1d; color:#fca5a5; }
+  .online-badge  { font-size:10px; padding:1px 6px; border-radius:4px; background:#064e3b; color:#6ee7b7; }
+
+  .seq-counter { font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; color:var(--accent2); }
+  .metric-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; }
+  .metric-key { color:var(--muted); }
+  .metric-val { color:var(--text); font-family:'JetBrains Mono',monospace; }
+
+  .concept-chip { display:inline-block; padding:2px 8px; border-radius:4px; font-size:10px;
+    font-weight:500; margin:2px; background:#0d2018; color:var(--accent2); border:1px solid var(--border); }
+
+  label { font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
+  input { padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); font-family:inherit; font-size:12px; outline:none; width:100%; }
+  input:focus { border-color:var(--accent); }
+
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+  @keyframes slideIn { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)} }
+</style>
+</head>
+<body>
+<header>
+  <div class="badge">HLD</div>
+  <h1>💬 Chat Application</h1>
+  <p>WebSockets · Sequence Numbers · ACK · Offline Queue · Transactional Outbox · Heartbeat Presence</p>
+</header>
+
+<div class="container">
+  <!-- User setup bar -->
+  <div style="display:flex; gap:12px; margin-bottom:16px; align-items:flex-end; flex-wrap:wrap;">
+    <div style="flex:1; min-width:200px;">
+      <label>Your Username</label>
+      <input id="username" value="alice" placeholder="alice">
+    </div>
+    <button onclick="connectUser()" style="padding:9px 18px; background:var(--accent); color:#000; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-family:inherit; font-size:13px; white-space:nowrap;">
+      🔌 Connect
+    </button>
+    <span id="conn-status" style="font-size:12px; color:var(--muted); white-space:nowrap; padding-bottom:2px;">Disconnected</span>
+    <div style="margin-left:auto; display:flex; align-items:center;">
+      <span id="backplane-status" style="padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; background:#0d2018; color:var(--accent2); border:1px solid var(--border);">
+        ⚡ Backplane: Checking...
+      </span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Room list -->
+    <div class="panel">
+      <div class="panel-header">🏠 Rooms</div>
+      <div class="room-list" id="room-list">Loading...</div>
+      <div style="padding:10px; border-top:1px solid var(--border);">
+        <input id="new-room" placeholder="new-room-name" style="margin-bottom:6px;">
+        <button onclick="createRoom()" style="width:100%;padding:7px;background:var(--accent);color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-family:inherit;font-size:12px;">
+          + Create Room
+        </button>
+      </div>
+    </div>
+
+    <!-- Chat window -->
+    <div class="panel chat-panel">
+      <div class="chat-header">
+        <div>
+          <div style="font-weight:600;" id="current-room-name">Select a room</div>
+          <div style="font-size:11px; color:var(--muted);" id="room-seq">Seq: 0</div>
+        </div>
+        <div id="online-count" style="font-size:12px; color:var(--muted);"></div>
+      </div>
+      <div class="messages" id="messages">
+        <div class="sys-msg">Connect and join a room to start chatting</div>
+      </div>
+      <div class="input-area">
+        <input class="chat-input" id="msg-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMsg()">
+        <button class="send-btn" onclick="sendMsg()">Send</button>
+      </div>
+    </div>
+
+    <!-- Info panel -->
+    <div class="panel" style="overflow-y:auto;">
+      <div class="info-section">
+        <h3>📡 Connection State</h3>
+        <div class="metric-row">
+          <span class="metric-key">Status</span>
+          <span class="metric-val" id="ws-status">–</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-key">Room</span>
+          <span class="metric-val" id="ws-room">–</span>
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h3>🔢 Sequence Numbers</h3>
+        <div class="seq-counter" id="seq-head">0</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:4px;">
+          Monotonic per-room counter. Ensures total ordering. In prod: Redis INCR (atomic).
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h3>👥 Online Presence</h3>
+        <div id="presence-list" style="font-size:12px; color:var(--muted);">–</div>
+      </div>
+
+      <div class="info-section">
+        <h3>⚡ Cluster Pub/Sub Backplane</h3>
+        <div class="metric-row">
+          <span class="metric-key">Mode</span>
+          <span class="metric-val" id="bp-mode">–</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-key">Node ID</span>
+          <span class="metric-val" id="bp-node">–</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-key">Redis Pub/Sub</span>
+          <span class="metric-val" id="bp-redis">–</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-key">Cluster Events</span>
+          <span class="metric-val" id="bp-events">–</span>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.5;">
+          Horizontal multi-node scaling: servers broadcast over Redis channel <code>chat:rooms:*</code> with automatic local fallback.
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h3>📨 Offline Queue</h3>
+        <div style="font-size:12px; color:var(--muted); line-height:1.7;">
+          Messages held while user is offline. Flushed on reconnect.<br>
+          <strong style="color:var(--text);">Pattern:</strong> Kafka consumer group offsets
+        </div>
+      </div>
+
+      <div class="info-section">
+        <h3>Concepts</h3>
+        <span class="concept-chip">WebSocket</span>
+        <span class="concept-chip">Seq Numbers</span>
+        <span class="concept-chip">ACK</span>
+        <span class="concept-chip">At-Least-Once</span>
+        <span class="concept-chip">Deduplication</span>
+        <span class="concept-chip">Offline Queue</span>
+        <span class="concept-chip">Heartbeat</span>
+        <span class="concept-chip">Outbox Pattern</span>
+        <span class="concept-chip">Backpressure</span>
+        <span class="concept-chip">Presence</span>
+
+        <div style="margin-top:12px; font-size:11px; color:var(--muted); line-height:1.8;">
+          <strong style="color:var(--text);">🎯 Interview Talking Point</strong><br>
+          "If ACK is lost after save, client retries with same message_id → server deduplicates → no duplicate shown."
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8003';
+let ws = null, currentRoom = null, username = 'alice', seenMsgs = new Set();
+
+async function api(method, path, body) {
+  const o = { method, headers:{'Content-Type':'application/json'} };
+  if (body) o.body = JSON.stringify(body);
+  const r = await fetch(API+path, o);
+  return r.json();
+}
+
+function gid(id) { return document.getElementById(id); }
+function setStatus(text, ok) {
+  const el = gid('conn-status');
+  el.textContent = text;
+  el.style.color = ok ? '#10b981' : ok === false ? '#ef4444' : '#64748b';
+  gid('ws-status').textContent = text;
+}
+
+async function loadRooms() {
+  const rooms = await api('GET', '/api/rooms');
+  const list = gid('room-list');
+  list.innerHTML = '';
+  rooms.forEach(r => {
+    const d = document.createElement('div');
+    d.className = 'room-item' + (r.id === currentRoom ? ' active' : '');
+    d.onclick = () => joinRoom(r.id, r.name);
+    d.innerHTML = `
+      <div class="room-name">${r.name}</div>
+      <div class="room-meta">
+        <span class="online-dot"></span>${r.online} online · ${r.messages} msgs
+      </div>`;
+    list.appendChild(d);
+  });
+}
+
+async function createRoom() {
+  const name = gid('new-room').value.trim();
+  if (!name) return;
+  await api('POST', '/api/rooms', { name });
+  gid('new-room').value = '';
+  loadRooms();
+}
+
+function connectUser() {
+  username = gid('username').value.trim() || 'alice';
+  if (currentRoom) joinRoom(currentRoom, '');
+  else setStatus('Connected (pick a room)', null);
+}
+
+function joinRoom(roomId, roomName) {
+  if (ws) { ws.close(); ws = null; }
+  currentRoom = roomId;
+  gid('current-room-name').textContent = roomName || roomId;
+  gid('ws-room').textContent = roomId;
+  gid('messages').innerHTML = '';
+  loadRooms();
+
+  ws = new WebSocket(`ws://localhost:8003/ws/${roomId}/${username}`);
+
+  ws.onopen = () => {
+    setStatus('● Connected', true);
+    // Send heartbeat every 15s
+    setInterval(() => { if(ws && ws.readyState===1) ws.send(JSON.stringify({type:'heartbeat'})); }, 15000);
+  };
+
+  ws.onclose = () => {
+    setStatus('✗ Disconnected', false);
+    addSysMsg('Disconnected. Reconnecting in 3s...');
+    setTimeout(() => joinRoom(roomId, roomName), 3000); // exponential backoff sim
+  };
+
+  ws.onerror = () => setStatus('✗ Error', false);
+
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+
+    if (d.type === 'history') {
+      d.messages.forEach(m => renderMsg(m, false));
+      return;
+    }
+    if (d.type === 'offline_flush') {
+      addSysMsg(`🔄 Delivered ${d.count} offline messages`);
+      d.messages.forEach(m => renderMsg(m, false));
+      return;
+    }
+    if (d.type === 'presence') {
+      const ev = d.event === 'join' ? `${d.user_id} joined` : `${d.user_id} left`;
+      addSysMsg(ev);
+      updatePresence(d.online_users);
+      return;
+    }
+    if (d.type === 'ack') {
+      gid('seq-head').textContent = d.seq || 0;
+      const dup = d.duplicate ? ' (duplicate — deduped)' : ' ✓ saved';
+      const ackEl = document.querySelector(`[data-msgid="${d.message_id}"] .msg-ack`);
+      if (ackEl) ackEl.textContent = `seq:${d.seq}${dup}`;
+      return;
+    }
+    if (d.type === 'message') {
+      renderMsg(d, false);
+    }
+    if (d.type === 'heartbeat_ack') return;
+  };
+}
+
+function renderMsg(msg, own) {
+  if (seenMsgs.has(msg.message_id)) return; // client-side dedup
+  seenMsgs.add(msg.message_id);
+  const isMine = msg.user_id === username;
+  const div = document.createElement('div');
+  div.className = 'msg ' + (isMine ? 'msg-own' : 'msg-other');
+  div.dataset.msgid = msg.message_id;
+  div.innerHTML = `
+    ${!isMine ? `<div style="font-size:10px;font-weight:600;margin-bottom:4px;opacity:.8">${msg.user_id}</div>` : ''}
+    <div>${msg.text}</div>
+    <div class="msg-meta">seq:${msg.seq} · ${msg.ts?.slice(11,19)||''}
+      ${isMine ? `<span class="msg-ack"> sending...</span>` : ''}</div>
+  `;
+  gid('messages').appendChild(div);
+  gid('messages').scrollTop = 9999;
+  gid('seq-head').textContent = msg.seq || gid('seq-head').textContent;
+}
+
+function addSysMsg(text) {
+  const div = document.createElement('div');
+  div.className = 'sys-msg';
+  div.textContent = text;
+  gid('messages').appendChild(div);
+  gid('messages').scrollTop = 9999;
+}
+
+function updatePresence(users) {
+  const el = gid('presence-list');
+  if (!users || !users.length) { el.textContent = 'No one online'; return; }
+  el.innerHTML = users.map(u =>
+    `<div class="presence-user"><span class="online-dot"></span>${u} <span class="online-badge">online</span></div>`
+  ).join('');
+  gid('online-count').textContent = `${users.length} online`;
+}
+
+function sendMsg() {
+  if (!ws || ws.readyState !== 1) { alert('Connect first!'); return; }
+  const text = gid('msg-input').value.trim();
+  if (!text) return;
+  const msg_id = crypto.randomUUID().slice(0,8);
+  const msg = { type:'message', text, message_id: msg_id };
+  // Optimistic render
+  renderMsg({ message_id: msg_id, user_id: username, text, seq: '…', ts: new Date().toISOString() }, true);
+  ws.send(JSON.stringify(msg));
+  gid('msg-input').value = '';
+}
+
+async function updateBackplaneStatus() {
+  try {
+    const res = await fetch('/api/pubsub-status');
+    const data = await res.json();
+    const el = gid('backplane-status');
+    if (data.mode === 'redis_pubsub' && data.redis_connected) {
+      el.style.background = '#064e3b';
+      el.style.color = '#6ee7b7';
+      el.style.borderColor = '#059669';
+      el.innerHTML = `⚡ Redis Pub/Sub Live <span style="font-family:monospace;font-size:10px;">(${data.node_id})</span>`;
+    } else {
+      el.style.background = '#451a03';
+      el.style.color = '#fcd34d';
+      el.style.borderColor = '#b45309';
+      el.innerHTML = `⚡ In-Memory Fallback <span style="font-family:monospace;font-size:10px;">(${data.node_id})</span>`;
+    }
+    gid('bp-mode').textContent = data.mode;
+    gid('bp-node').textContent = data.node_id;
+    gid('bp-redis').textContent = data.redis_connected ? 'Connected (Live)' : 'Disconnected (Fallback Active)';
+    gid('bp-events').textContent = `Pub: ${data.messages_published} · Recv: ${data.messages_received}`;
+  } catch (e) {
+    console.warn('Backplane check error:', e);
+  }
+}
+
+updateBackplaneStatus();
+setInterval(updateBackplaneStatus, 3000);
+
+loadRooms();
+setInterval(loadRooms, 10000);
+</script>
+</body>
+</html>
